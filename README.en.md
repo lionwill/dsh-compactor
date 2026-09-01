@@ -29,6 +29,7 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 
 - All event wiring uses the real dsh interfaces: `session/event` (dispatched by `tool/result` / `assistant/message` / `tool/call`), service injection via `static inject = ['sessions', 'commands']`, config schema via `@deepseek-ai/schemastery`, periodic scans managed by `ctx.effect` lifecycle.
 - `/compact` is **not re-registered** (dsh 0.1.2-alpha.3 ships `@deepseek-ai/dsh-command-compact`); this plugin adds `/local-compact` and `/restore`.
+  > ⚠️ A plain `dsh-web-app` profile **disables** `command-compact` (`disabled: true`) on the host plane, so typing `/` shows no built-in `/compact`. This plugin's bundle patch explicitly **re-enables** `compaction-basic`, `command-compact` and `tool-result-pruner` (applied after web-app), so after installing it both `/compact` and `/local-compact` are available.
 - The plugin exposes `ctx.compactor`: `project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`.
 
 ### Commands

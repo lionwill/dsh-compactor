@@ -1,13 +1,18 @@
-# dsh-compactor — cordis4 插件组合包 patch 层（用于 dsh 0.1.2-alpha.3+ 加载）
+# dsh-compactor — cordis4 plugin bundle patch layer (for dsh 0.1.2-alpha.3+)
 #
-# 这是 dsh.bundle 引用的 patch 文件，格式为 YAML 操作数组（insert 行）。
-# 安装后由 dsh 的 profile 层组合器应用：本行插入 dsh-compactor 插件及其完整配置。
+# This is the patch file referenced by dsh.bundle — a YAML array of loader patch
+# entries (insert rows / id-targeted override rows). Applied by the dsh profile
+# layer composer after dsh-base / dsh-web-app: it inserts the dsh-compactor plugin
+# with its full config, and re-enables the built-in /compact that web profiles
+# disable on the host plane.
 #
-# 注意：
-# - name 必须等于 npm 包名，dsh 会从 profile 依赖中解析并加载其默认导出（Compactor Service 类）。
-# - /compact 由 dsh 内置命令（@deepseek-ai/dsh-command-compact，dsh-base 自带）提供；
-#   本插件提供 /restore + /local-compact + 剪枝 + 护栏。
-# - 摘要需要：export DEEPSEEK_API_KEY=sk-...
+# Notes:
+# - `name` must equal the npm package name; dsh resolves it from the profile
+#   dependency and loads its default export (the Compactor Service class).
+# - /compact is provided by the built-in @deepseek-ai/dsh-command-compact
+#   (part of dsh-base); this plugin provides /restore + /local-compact + pruning
+#   + the dead-loop guard.
+# - Summarization needs: export DEEPSEEK_API_KEY=sk-...
 - insert:
     - id: dsh-compactor
       name: dsh-compactor
@@ -25,5 +30,23 @@
           - task
         qualityThreshold: 0.85
         exemptPatterns: []
-        # /local-compact 本地规则文件（默认包内 local-rules.json；也可用 $DSH_COMPACTOR_RULES）
+        # /local-compact rules file (defaults to the package local-rules.json; can
+        # also be set via $DSH_COMPACTOR_RULES)
         # localRulesPath: /path/to/my-rules.json
+
+# Re-enable the dsh built-in manual /compact and its backend (compaction service +
+# tool-result pruner). Background: the `dsh-web-app` bundle disables these rows
+# (`disabled: true`) on the host plane, so a plain web profile shows no built-in
+# /compact. This plugin relies on the built-in /compact (it does not re-register it),
+# so it explicitly re-enables them here. Patch semantics = "later layer wins per id";
+# this file applies after dsh-base / dsh-web-app, so `disabled: false` overrides
+# their `disabled: true`. It is a no-op (idempotent) for non-web profiles where these
+# rows are not disabled.
+- id: compaction-basic
+  disabled: false
+
+- id: command-compact
+  disabled: false
+
+- id: tool-result-pruner
+  disabled: false

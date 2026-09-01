@@ -29,6 +29,7 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 
 - 事件接线全部使用真实 dsh 接口：`session/event`（按 `tool/result` / `assistant/message` / `tool/call` 分派）、服务注入 `static inject = ['sessions', 'commands']`、配置 schema 用 `@deepseek-ai/schemastery`、定时扫描由 `ctx.effect` 托管生命周期。
 - `/compact` **不重复注册**（dsh 0.1.2-alpha.3 内置 `@deepseek-ai/dsh-command-compact`）；本插件提供 `/local-compact` 与 `/restore`。
+  > ⚠️ 纯 `dsh-web-app` profile 默认在 host 平面**禁用** `command-compact`（`disabled: true`），打斜杠看不到 `/compact`。本插件的 bundle patch 会**显式重新启用** `compaction-basic`、`command-compact`、`tool-result-pruner`（在 web-app 之后应用），因此装了这个插件后 `/compact` 与 `/local-compact` 都能调出。
 - 插件对外暴露 `ctx.compactor`：`project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`。
 
 ### 命令
