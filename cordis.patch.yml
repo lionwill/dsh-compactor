@@ -1,0 +1,20 @@
+# dsh-compactor — cordis4 插件配置（用于 dsh 0.1.2-alpha.3+ 加载）
+# 摘要需要：export DEEPSEEK_API_KEY=sk-...
+# /compact 使用 dsh 内置命令；本插件提供 /restore + /local-compact + 剪枝 + 护栏
+plugins:
+  dsh-compactor:
+    thresholdTokens: 32768
+    targetTokens: 8192
+    compressInterval: 300
+    retainRecentRounds: 3
+    summaryModel: deepseek-chat
+    enablePruning: true
+    enableSummary: true
+    exemptTools:
+      - write
+      - edit
+      - task
+    qualityThreshold: 0.85
+    exemptPatterns: []
+    # /local-compact 本地规则文件（默认包内 local-rules.json；也可用 $DSH_COMPACTOR_RULES）
+    # localRulesPath: /path/to/my-rules.json

@@ -1,0 +1,44 @@
+{
+  "name": "dsh-compactor",
+  "version": "0.4.0",
+  "description": "Context Compaction plugin for DeepSeek Harness: tool-result pruning, LLM or offline-rule summarization with a user-facing compression report, dead-loop guard, and /restore rollback.",
+  "type": "module",
+  "main": "lib/src/index.js",
+  "types": "lib/src/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "lib",
+    "src",
+    "local-rules.json",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "compaction",
+    "context",
+    "cordis",
+    "plugin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-commands": "^0.1.2-alpha.3",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3"
+  }
+}

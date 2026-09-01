@@ -1,0 +1,39 @@
+{
+  "maxSummaryChars": 1200,
+  "maxKeptSentences": 8,
+  "userLineMaxChars": 200,
+  "callArgsMaxChars": 80,
+  "fallback": {
+    "headChars": 300,
+    "tailChars": 160
+  },
+  "toolRules": {
+    "web_search": {
+      "keepTopResults": 5,
+      "relevanceField": "relevance_score",
+      "titleField": "title",
+      "urlField": "url",
+      "linkField": "link",
+      "dropFields": ["snippet", "description"]
+    },
+    "read_file": {
+      "headLines": 20,
+      "tailLines": 5
+    },
+    "code_execution": {
+      "maxStdoutLines": 30,
+      "maxStderrLines": 10,
+      "errorPattern": "error|exception|failed|failure|traceback|panic|错误|失败|异常|报错"
+    }
+  },
+  "patternRules": {
+    "research_chain": {
+      "mergeUrls": true,
+      "maxMergedUrls": 8
+    },
+    "code_debug": {
+      "attemptPattern": "第\\s*\\d+\\s*次|attempt\\s+\\d+|retry|重试|再次",
+      "keepLast": true
+    }
+  }
+}
