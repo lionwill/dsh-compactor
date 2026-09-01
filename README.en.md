@@ -42,29 +42,38 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 ### Installation
 
 ```bash
-# From GitHub (npm runs the `prepare` hook, which compiles automatically)
-dsh plugin add "github:<owner>/dsh-compactor#v0.4.0"
+# From GitHub (pnpm runs the `prepare` hook, which compiles automatically)
+dsh plugin add "github:<owner>/dsh-compactor#v0.4.1"
 # Local development
 dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
 ```
 
+> ⚠️ This plugin is a **dsh bundle**: its `package.json` declares `dsh.bundle.patch`
+> (pointing to `cordis.patch.yml`). dsh 0.1.2-alpha.3+ activates a package as a
+> profile layer **only** when it declares `dsh.bundle`; without it the package is
+> installed as a plain dependency and is **not activated**. If `dsh plugin` prints
+> "declares no dsh.bundle", you installed an old build — upgrade to this version.
+
 ## Configuration
 
-`cordis.patch.yml`:
+`cordis.patch.yml` (a dsh bundle patch — a YAML array; the package ships the correct
+one. Override by `id` in your own profile if needed):
 
 ```yaml
-plugins:
-  dsh-compactor:
-    thresholdTokens: 32768   # token threshold that triggers compaction
-    targetTokens: 8192       # compaction target token count (reference)
-    compressInterval: 300    # periodic scan interval (seconds)
-    retainRecentRounds: 3    # most recent N messages are never compressed
-    summaryModel: deepseek-chat
-    enablePruning: true      # realtime tool-result pruning
-    enableSummary: true      # API summarization (auto offline fallback without a key)
-    exemptTools: [write, edit, task]   # tools never touched by pruning/guard/local compaction
-    qualityThreshold: 0.85   # keyword-retention warning threshold
-    # localRulesPath: /path/to/my-rules.json  # optional: custom local-rules file
+- insert:
+    - id: dsh-compactor
+      name: dsh-compactor
+      config:
+        thresholdTokens: 32768   # token threshold that triggers compaction
+        targetTokens: 8192       # compaction target token count (reference)
+        compressInterval: 300    # periodic scan interval (seconds)
+        retainRecentRounds: 3    # most recent N messages are never compressed
+        summaryModel: deepseek-chat
+        enablePruning: true      # realtime tool-result pruning
+        enableSummary: true      # API summarization (auto offline fallback without a key)
+        exemptTools: [write, edit, task]   # tools never touched by pruning/guard/local compaction
+        qualityThreshold: 0.85   # keyword-retention warning threshold
+        # localRulesPath: /path/to/my-rules.json  # optional: custom local-rules file
 ```
 
 The API engine needs a key: `export DEEPSEEK_API_KEY=sk-...` (without it the API path falls back to the offline extractive summarizer automatically).

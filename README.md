@@ -42,29 +42,36 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 ### 安装
 
 ```bash
-# 从 GitHub（先 npm 会执行 prepare 自动编译）
-dsh plugin add "github:<owner>/dsh-compactor#v0.4.0"
+# 从 GitHub（pnpm 会执行 prepare 自动编译）
+dsh plugin add "github:<owner>/dsh-compactor#v0.4.1"
 # 本地开发
 dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
 ```
 
+> ⚠️ 本插件是 **dsh bundle**：`package.json` 声明了 `dsh.bundle.patch`（指向 `cordis.patch.yml`）。
+> dsh 0.1.2-alpha.3+ 只激活声明了 `dsh.bundle` 的包为 profile 层；安装后它会自动加入
+> `dsh.profile.bundles` 并生效。若 `dsh plugin` 打印 "declares no dsh.bundle" 警告，
+> 说明装的是旧版（缺少该字段），请升级到本版本。
+
 ## 配置方式
 
-`cordis.patch.yml`：
+`cordis.patch.yml`（dsh bundle patch，YAML 数组，插件包内置已正确配置；用户如需覆盖按 `id` 覆盖即可）：
 
 ```yaml
-plugins:
-  dsh-compactor:
-    thresholdTokens: 32768   # 触发压缩的 token 阈值
-    targetTokens: 8192       # 压缩目标 token 数（参考值）
-    compressInterval: 300    # 定时扫描间隔（秒）
-    retainRecentRounds: 3    # 最近 N 条消息永不压缩
-    summaryModel: deepseek-chat
-    enablePruning: true      # 实时层剪枝
-    enableSummary: true      # API 摘要（无 Key 时自动降级本地兜底）
-    exemptTools: [write, edit, task]   # 豁免工具（剪枝/护栏/本地压缩均跳过）
-    qualityThreshold: 0.85   # 关键信息保留率告警阈值
-    # localRulesPath: /path/to/my-rules.json  # 可选：本地规则文件路径
+- insert:
+    - id: dsh-compactor
+      name: dsh-compactor
+      config:
+        thresholdTokens: 32768   # 触发压缩的 token 阈值
+        targetTokens: 8192       # 压缩目标 token 数（参考值）
+        compressInterval: 300    # 定时扫描间隔（秒）
+        retainRecentRounds: 3    # 最近 N 条消息永不压缩
+        summaryModel: deepseek-chat
+        enablePruning: true      # 实时层剪枝
+        enableSummary: true      # API 摘要（无 Key 时自动降级本地兜底）
+        exemptTools: [write, edit, task]   # 豁免工具（剪枝/护栏/本地压缩均跳过）
+        qualityThreshold: 0.85   # 关键信息保留率告警阈值
+        # localRulesPath: /path/to/my-rules.json  # 可选：本地规则文件路径
 ```
 
 API 摘要需要密钥：`export DEEPSEEK_API_KEY=sk-...`（不设置则 API 路径自动使用本地抽取式兜底）。

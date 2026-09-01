@@ -1,20 +1,29 @@
-# dsh-compactor — cordis4 插件配置（用于 dsh 0.1.2-alpha.3+ 加载）
-# 摘要需要：export DEEPSEEK_API_KEY=sk-...
-# /compact 使用 dsh 内置命令；本插件提供 /restore + /local-compact + 剪枝 + 护栏
-plugins:
-  dsh-compactor:
-    thresholdTokens: 32768
-    targetTokens: 8192
-    compressInterval: 300
-    retainRecentRounds: 3
-    summaryModel: deepseek-chat
-    enablePruning: true
-    enableSummary: true
-    exemptTools:
-      - write
-      - edit
-      - task
-    qualityThreshold: 0.85
-    exemptPatterns: []
-    # /local-compact 本地规则文件（默认包内 local-rules.json；也可用 $DSH_COMPACTOR_RULES）
-    # localRulesPath: /path/to/my-rules.json
+# dsh-compactor — cordis4 插件组合包 patch 层（用于 dsh 0.1.2-alpha.3+ 加载）
+#
+# 这是 dsh.bundle 引用的 patch 文件，格式为 YAML 操作数组（insert 行）。
+# 安装后由 dsh 的 profile 层组合器应用：本行插入 dsh-compactor 插件及其完整配置。
+#
+# 注意：
+# - name 必须等于 npm 包名，dsh 会从 profile 依赖中解析并加载其默认导出（Compactor Service 类）。
+# - /compact 由 dsh 内置命令（@deepseek-ai/dsh-command-compact，dsh-base 自带）提供；
+#   本插件提供 /restore + /local-compact + 剪枝 + 护栏。
+# - 摘要需要：export DEEPSEEK_API_KEY=sk-...
+- insert:
+    - id: dsh-compactor
+      name: dsh-compactor
+      config:
+        thresholdTokens: 32768
+        targetTokens: 8192
+        compressInterval: 300
+        retainRecentRounds: 3
+        summaryModel: deepseek-chat
+        enablePruning: true
+        enableSummary: true
+        exemptTools:
+          - write
+          - edit
+          - task
+        qualityThreshold: 0.85
+        exemptPatterns: []
+        # /local-compact 本地规则文件（默认包内 local-rules.json；也可用 $DSH_COMPACTOR_RULES）
+        # localRulesPath: /path/to/my-rules.json
