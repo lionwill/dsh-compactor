@@ -2,7 +2,7 @@
 
 > 语言 / Language：**中文（GitHub 默认展示）** ｜ [English](./README.en.md)
 
-DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 cordis4 原生（ESM），面向 dsh 0.1.2-alpha.3+。
+DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 cordis4 原生（ESM），面向 dsh 0.1.2-alpha.3+（已在 dsh 0.1.2-alpha.4 全量实测兼容）。
 
 ## 插件原理
 
@@ -28,8 +28,8 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 ## 工作方式
 
 - 事件接线全部使用真实 dsh 接口：`session/event`（按 `tool/result` / `assistant/message` / `tool/call` 分派）、服务注入 `static inject = ['sessions', 'commands']`、配置 schema 用 `@deepseek-ai/schemastery`、定时扫描由 `ctx.effect` 托管生命周期。
-- `/compact` **不重复注册**（dsh 0.1.2-alpha.3 内置 `@deepseek-ai/dsh-command-compact`）；本插件提供 `/local-compact` 与 `/restore`。
-  > ⚠️ 纯 `dsh-web-app` profile 默认在 host 平面**禁用** `command-compact`（`disabled: true`），打斜杠看不到 `/compact`。本插件的 bundle patch 会**显式重新启用** `compaction-basic`、`command-compact`、`tool-result-pruner`（在 web-app 之后应用），因此装了这个插件后 `/compact` 与 `/local-compact` 都能调出。
+- `/compact` **不重复注册**（dsh 0.1.2-alpha.3 起内置 `@deepseek-ai/dsh-command-compact`，已在 0.1.2-alpha.4 实测可注册）；本插件提供 `/local-compact` 与 `/restore`。
+  > ⚠️ 纯 `dsh-web-app` profile 默认在 host 平面**禁用** `command-compact`（`disabled: true`），打斜杠看不到 `/compact`。本插件的 bundle patch 会**显式重新启用** `compaction-basic`、`command-compact`、`tool-result-pruner`（在 web-app 之后应用），因此装了这个插件后 `/compact` 与 `/local-compact` 都能调出（已在 dsh 0.1.2-alpha.4 的 web profile 实测：`compact`、`local-compact`、`restore` 三个命令均在命令面注册）。
 - 插件对外暴露 `ctx.compactor`：`project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`。
 
 ### 命令
@@ -43,16 +43,25 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 ### 安装
 
 ```bash
-# 从 GitHub（pnpm 会执行 prepare 自动编译）
-dsh plugin add "github:<owner>/dsh-compactor#v0.4.1"
-# 本地开发
+# 本地开发 / 立即可用（免 git prepare、免 allowBuilds，已实测）
 dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
+
+# 从 GitHub（pnpm 会执行 prepare 自动编译）
+dsh plugin add "github:lionwill/dsh-compactor"          # 默认 main 分支
+# 若要用固定版本 tag，需先在仓库打上 v0.4.1 tag 后再用：
+dsh plugin add "github:lionwill/dsh-compactor#v0.4.1"
 ```
 
-> ⚠️ 本插件是 **dsh bundle**：`package.json` 声明了 `dsh.bundle.patch`（指向 `cordis.patch.yml`）。
-> dsh 0.1.2-alpha.3+ 只激活声明了 `dsh.bundle` 的包为 profile 层；安装后它会自动加入
-> `dsh.profile.bundles` 并生效。若 `dsh plugin` 打印 "declares no dsh.bundle" 警告，
-> 说明装的是旧版（缺少该字段），请升级到本版本。
+> ⚠️ **GitHub 安装注意**：
+> 1. 本插件是 **dsh bundle**：`package.json` 声明了 `dsh.bundle.patch`（指向 `cordis.patch.yml`）。
+>    dsh 0.1.2-alpha.3+ 只激活声明了 `dsh.bundle` 的包为 profile 层；安装后它会自动加入
+>    `dsh.profile.bundles` 并生效。若 `dsh plugin` 打印 "declares no dsh.bundle" 警告，
+>    说明装的是旧版（缺少该字段），请升级到本版本。
+> 2. pnpm ≥10 默认阻止 git 依赖的 `prepare`（编译）脚本，GitHub 安装会报
+>    `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`。在 profile 的 `pnpm-workspace.yaml` 里加
+>    `allowBuilds: { dsh-compactor: true }` 即可（裸包名匹配任意 commit，一劳永逸）。
+> 3. 仓库当前**没有 `v0.4.1` tag**，直接写 `#v0.4.1` 会报 `Could not resolve v0.4.1 to a commit`；
+>    要么用不带 tag 的 `github:lionwill/dsh-compactor`，要么先在仓库打 `v0.4.1` tag。
 
 ## 配置方式
 
@@ -116,7 +125,7 @@ API 摘要需要密钥：`export DEEPSEEK_API_KEY=sk-...`（不设置则 API 路
 - 归档写入目录默认为 `$DSH_DATA_DIR/archive/`（无该变量时为 `./.dsh-compactor-archive/`）；请确保目录可写，且不要手工编辑归档文件（append-only）。
 - `exemptTools` 中的工具（默认 `write`/`edit`/`task`）不会被剪枝、护栏和本地压缩触碰；如工作流依赖其结果，请勿移除。
 - 修改规则文件后无需重启会话：每次执行 `/local-compact` 都会重新读取。
-- 本插件不注册 `/compact`，与 dsh 内置压缩命令互不冲突；两者可并存。
+- 本插件**不注册** `/compact`——它是 dsh 内置命令（`@deepseek-ai/dsh-command-compact`），本插件只通过 bundle patch 显式重新启用它，因此不会与 dsh 内置压缩命令产生重复注册。**注意：“不冲突”仅针对 dsh 内置**：若你同时安装的另一个插件也注册 `/compact`（例如第三方 `dsh-compact`），命令面会出现重复注册冲突、`/compact` 会失效。实测中卸载那个与 dsh 内置重复注册 `/compact` 的第三方插件后，本插件 + 内置 `/compact` 即可直接使用；只需保留一个提供 `/compact` 的插件即可。
 
 ## 目录结构
 

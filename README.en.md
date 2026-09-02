@@ -2,7 +2,7 @@
 
 > Language: **English** ｜ [中文（GitHub default）](./README.md)
 
-Context Compaction plugin for DeepSeek Harness (`dsh`). Built natively on cordis4 (ESM), targeting dsh 0.1.2-alpha.3+.
+Context Compaction plugin for DeepSeek Harness (`dsh`). Built natively on cordis4 (ESM), targeting dsh 0.1.2-alpha.3+ (fully verified compatible on dsh 0.1.2-alpha.4).
 
 ## How it works
 
@@ -28,8 +28,8 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 ## Working model
 
 - All event wiring uses the real dsh interfaces: `session/event` (dispatched by `tool/result` / `assistant/message` / `tool/call`), service injection via `static inject = ['sessions', 'commands']`, config schema via `@deepseek-ai/schemastery`, periodic scans managed by `ctx.effect` lifecycle.
-- `/compact` is **not re-registered** (dsh 0.1.2-alpha.3 ships `@deepseek-ai/dsh-command-compact`); this plugin adds `/local-compact` and `/restore`.
-  > ⚠️ A plain `dsh-web-app` profile **disables** `command-compact` (`disabled: true`) on the host plane, so typing `/` shows no built-in `/compact`. This plugin's bundle patch explicitly **re-enables** `compaction-basic`, `command-compact` and `tool-result-pruner` (applied after web-app), so after installing it both `/compact` and `/local-compact` are available.
+- `/compact` is **not re-registered** (dsh 0.1.2-alpha.3 ships `@deepseek-ai/dsh-command-compact`; verified registrable on 0.1.2-alpha.4); this plugin adds `/local-compact` and `/restore`.
+  > ⚠️ A plain `dsh-web-app` profile **disables** `command-compact` (`disabled: true`) on the host plane, so typing `/` shows no built-in `/compact`. This plugin's bundle patch explicitly **re-enables** `compaction-basic`, `command-compact` and `tool-result-pruner` (applied after web-app), so after installing it both `/compact` and `/local-compact` are available (verified on a dsh 0.1.2-alpha.4 web profile: `compact`, `local-compact` and `restore` are all registered on the command surface).
 - The plugin exposes `ctx.compactor`: `project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`.
 
 ### Commands
@@ -43,17 +43,28 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 ### Installation
 
 ```bash
-# From GitHub (pnpm runs the `prepare` hook, which compiles automatically)
-dsh plugin add "github:<owner>/dsh-compactor#v0.4.1"
-# Local development
+# Local development / fastest path (no git prepare, no allowBuilds needed — verified)
 dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
+
+# From GitHub (pnpm runs the `prepare` hook, which compiles automatically)
+dsh plugin add "github:lionwill/dsh-compactor"          # default main branch
+# To pin a version tag, tag the repo v0.4.1 first, then:
+dsh plugin add "github:lionwill/dsh-compactor#v0.4.1"
 ```
 
-> ⚠️ This plugin is a **dsh bundle**: its `package.json` declares `dsh.bundle.patch`
-> (pointing to `cordis.patch.yml`). dsh 0.1.2-alpha.3+ activates a package as a
-> profile layer **only** when it declares `dsh.bundle`; without it the package is
-> installed as a plain dependency and is **not activated**. If `dsh plugin` prints
-> "declares no dsh.bundle", you installed an old build — upgrade to this version.
+> ⚠️ **Notes on GitHub installs**:
+> 1. This plugin is a **dsh bundle**: its `package.json` declares `dsh.bundle.patch`
+>    (pointing to `cordis.patch.yml`). dsh 0.1.2-alpha.3+ activates a package as a
+>    profile layer **only** when it declares `dsh.bundle`; without it the package is
+>    installed as a plain dependency and is **not activated**. If `dsh plugin` prints
+>    "declares no dsh.bundle", you installed an old build — upgrade to this version.
+> 2. pnpm ≥10 blocks `prepare` (compile) scripts on git dependencies by default, so a
+>    GitHub install fails with `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`. Add
+>    `allowBuilds: { dsh-compactor: true }` to the profile's `pnpm-workspace.yaml`
+>    (the bare name matches any commit, so you won't need to re-edit it per update).
+> 3. The repo currently has **no `v0.4.1` tag**, so `#v0.4.1` fails with
+>    `Could not resolve v0.4.1 to a commit`. Use the tagless `github:lionwill/dsh-compactor`,
+>    or tag the repo `v0.4.1` first.
 
 ## Configuration
 
@@ -118,7 +129,7 @@ built-in defaults ← package `local-rules.json` ← env `DSH_COMPACTOR_RULES=<p
 - Archives default to `$DSH_DATA_DIR/archive/` (or `./.dsh-compactor-archive/` if unset). Ensure the directory is writable and never hand-edit archive files (append-only).
 - Tools in `exemptTools` (defaults: `write` / `edit` / `task`) are never pruned, guarded or locally compacted. Do not remove them if your workflow depends on their results.
 - Rule file changes take effect without restarting the session: `/local-compact` reloads on every run.
-- This plugin does not register `/compact`; it coexists with dsh's built-in compaction command.
+- This plugin does **not** register `/compact` — it is dsh's built-in command (`@deepseek-ai/dsh-command-compact`) which this plugin only explicitly re-enables via its bundle patch, so it never duplicates dsh's built-in registration. **Note: "no conflict" applies only to dsh's built-in.** If another plugin you installed also registers `/compact` (e.g. the third-party `dsh-compact`), the command surface gets a duplicate-registration conflict and `/compact` stops working. In practice, after uninstalling that third-party plugin which duplicated dsh's built-in `/compact`, this plugin + the built-in `/compact` work directly; just keep a single provider of `/compact`.
 
 ## Directory layout
 
