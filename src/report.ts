@@ -18,25 +18,25 @@ export type BlockReason = 'tool_result' | 'long_response' | 'multiple_tools' | '
 
 /** One compressed span: what it covered and what it cost. */
 export interface BlockReport {
- /** Category of the compressed content. */
+  /** Category of the compressed content. */
   reason: BlockReason
- /** Detected conversation pattern of the span. */
+  /** Detected conversation pattern of the span. */
   pattern: ConversationPattern
- /** Human-readable scope label, e.g. `web_search 工具结果 ×2`. */
+  /** Human-readable scope label, e.g. `web_search 工具结果 ×2`. */
   scope: string
- /** Number of original messages replaced. */
+  /** Number of original messages replaced. */
   messages: number
   charsBefore: number
   charsAfter: number
   tokensBefore: number
   tokensAfter: number
- /** tokensBefore - tokensAfter. */
+  /** tokensBefore - tokensAfter. */
   tokensSaved: number
- /** tokensSaved / tokensBefore (0..1). */
+  /** tokensSaved / tokensBefore (0..1). */
   ratio: number
- /** Keyword retention of the summary vs. the originals (0..1). */
+  /** Keyword retention of the summary vs. the originals (0..1). */
   keywordCoverage: number
- /** Archive entry id for /restore. */
+  /** Archive entry id for /restore. */
   archiveId: string
 }
 
@@ -44,20 +44,20 @@ export interface BlockReport {
 export interface CompactionReport {
   ok: boolean
   sessionId: string
- /** Which engine produced the summaries. */
-  mode: 'api' | 'local'
+  /** Which engine produced the summaries. */
+  mode: 'api' | 'local' | 'su'
   tokensBefore: number
   tokensAfter: number
   savedTokens: number
- /** savedTokens / tokensBefore (0..1). */
+  /** savedTokens / tokensBefore (0..1). */
   ratio: number
- /** Estimated saved input tokens on the NEXT model call (input is charged per turn). */
+  /** Estimated saved input tokens on the NEXT model call (input is charged per turn). */
   savedNextCall: number
   blocks: BlockReport[]
   avgKeywordCoverage: number
- /** True when every block met the configured quality threshold. */
+  /** True when every block met the configured quality threshold. */
   qualityOk: boolean
- /** Multi-line human-readable conclusion. */
+  /** Multi-line human-readable conclusion. */
   message: string
 }
 

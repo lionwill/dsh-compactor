@@ -2,7 +2,7 @@
 
 > Language: **English** ｜ [中文（GitHub default）](./README.md)
 
-Context Compaction plugin for DeepSeek Harness (`dsh`). Built natively on cordis4 (ESM), targeting dsh 0.1.2-alpha.3+ (fully verified compatible on dsh 0.1.2-alpha.4).
+Context Compaction plugin for DeepSeek Harness (`dsh`). Built natively on cordis4 (ESM), targeting dsh 0.1.2-alpha.3+ (fully verified compatible on dsh 0.1.2-alpha.4, dsh 0.1.3-alpha.1 and dsh 0.1.5-rc.2).
 
 ## How it works
 
@@ -28,9 +28,9 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 ## Working model
 
 - All event wiring uses the real dsh interfaces: `session/event` (dispatched by `tool/result` / `assistant/message` / `tool/call`), service injection via `static inject = ['sessions', 'commands']`, config schema via `@deepseek-ai/schemastery`, periodic scans managed by `ctx.effect` lifecycle.
-- `/compact` is **not re-registered** (dsh 0.1.2-alpha.3 ships `@deepseek-ai/dsh-command-compact`; verified registrable on 0.1.2-alpha.4); this plugin adds `/local-compact` and `/restore`.
-  > ⚠️ A plain `dsh-web-app` profile **disables** `command-compact` (`disabled: true`) on the host plane, so typing `/` shows no built-in `/compact`. This plugin's bundle patch explicitly **re-enables** `compaction-basic`, `command-compact` and `tool-result-pruner` (applied after web-app), so after installing it both `/compact` and `/local-compact` are available (verified on a dsh 0.1.2-alpha.4 web profile: `compact`, `local-compact` and `restore` are all registered on the command surface).
-- The plugin exposes `ctx.compactor`: `project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`.
+- `/compact` is **not re-registered** (dsh 0.1.2-alpha.3 ships `@deepseek-ai/dsh-command-compact`; verified registrable on 0.1.2-alpha.4, 0.1.3-alpha.1 and 0.1.5-rc.2); this plugin adds `/local-compact`, `/su-compact` and `/restore`.
+  > ⚠️ A plain `dsh-web-app` profile **disables** `command-compact` (`disabled: true`) on the host plane, so typing `/` shows no built-in `/compact`. This plugin's bundle patch explicitly **re-enables** `compaction-basic`, `command-compact` and `tool-result-pruner` (applied after web-app), so after installing it `/compact`, `/local-compact` and `/su-compact` are all available (verified on dsh 0.1.2-alpha.4, 0.1.3-alpha.1 and 0.1.5-rc.2 web profiles: `compact`, `local-compact`, `restore` and `su-compact` are all registered on the command surface).
+- The plugin exposes `ctx.compactor`: `project()` / `compactSession()` / `localCompactSession()` / `suCompactSession()` / `restore()` / `prune()`.
 
 ### Commands
 
@@ -38,7 +38,8 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 |---------|--------|
 | `/local-compact` | First call only prints the risk notice and asks for confirmation — **nothing is compressed** |
 | `/local-compact confirm` | After confirmation, runs offline rules compaction and prints the report (`confirm` / `yes` / `确认` all accepted) |
-| `/restore` | Restores the pre-compression originals from the archive (works for both engines) |
+| `/su-compact` | **Semantic-understanding compaction**: runs the local rules judgement first, then feeds the LLM the span's intent ("what this does / why it matters") to keep only intent + working strategy + final conclusion (needs `DEEPSEEK_API_KEY`; auto-falls back to local extractive without a key) |
+| `/restore` | Restores the pre-compression originals from the archive (works for all engines) |
 
 ### Installation
 

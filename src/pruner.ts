@@ -3,8 +3,7 @@
  *
  * `pruneToolResult()` is a dispatcher that keeps only the key fields of each
  * tool result before it is fed back to the model. This directly attacks the
- * "tool result bloat" half of the compaction problem (see realtime
- * layer). Rendered faithfully from the
+ * "tool result bloat" half of the compaction problem.
  *
  * @module dsh-compactor/pruner
  */

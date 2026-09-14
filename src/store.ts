@@ -3,11 +3,10 @@
  *
  * Before a range of messages is replaced by a summary, the original messages
  * are written to an append-only store. `/restore` reads the last snapshot back
- * so a bad compaction is never fatal ( constraint 3: 可回退).
+ * so a bad compaction is never fatal.
  *
  * The store defaults to `$DSH_DATA_DIR/archive/compaction.log` and can be
- * pointed anywhere via config.archiveDir — this is what keeps the sandbox
- * isolated from the real environment.
+ * pointed anywhere via config.archiveDir.
  *
  * @module dsh-compactor/store
  */

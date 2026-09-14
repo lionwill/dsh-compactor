@@ -1,7 +1,7 @@
 /**
  * Plugin configuration (cordis4 native — @deepseek-ai/schemastery).
  * Mirrors the schema defined for cordis4 plugins, using the
- * schemastery `z` API used by every dsh 0.1.2-alpha.3 plugin.
+ * schemastery `z` API used by every dsh plugin.
  * @module dsh-compactor/config
  */
 

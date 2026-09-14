@@ -4,7 +4,7 @@
  * Every compaction records before/after token counts, elapsed time, detected
  * pattern, and a keyword-retention ratio. `keywordCoverage()` compares the
  * keyword set of the original span against the summary text — the acceptance
- * bar in is keyword coverage > 85% (qualityThreshold).
+ * bar is keyword coverage > 85% (qualityThreshold).
  *
  * @module dsh-compactor/monitor
  */

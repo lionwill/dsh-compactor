@@ -3,7 +3,7 @@
  *
  * `findCompressibleMessages()` identifies spans of a session that are safe to
  * compress. Boundaries are aligned to tool-call / tool-result pairing points so
- * a compressed segment never splits a tool call from its result ().
+ * a compressed segment never splits a tool call from its result.
  *
  * @module dsh-compactor/segmenter
  */
@@ -39,8 +39,8 @@ export function isPairedWithCall(messages: HarnessMessage[], idx: number): boole
 }
 
 /**
- * Detect whether an assistant message is a repetitive "car wheel" paragraph
- * (the token-level loop from ): a long text where a sentence repeats.
+ * Detect whether an assistant message is a repetitive "car wheel" paragraph:
+ * a long text where a sentence repeats.
  */
 export function isRepetitive(content: string): boolean {
   if (!content || content.length < 400) return false

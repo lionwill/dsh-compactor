@@ -2,7 +2,7 @@
 
 > 语言 / Language：**中文（GitHub 默认展示）** ｜ [English](./README.en.md)
 
-DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 cordis4 原生（ESM），面向 dsh 0.1.2-alpha.3+（已在 dsh 0.1.2-alpha.4 全量实测兼容）。
+DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 cordis4 原生（ESM），面向 dsh 0.1.2-alpha.3+（已在 dsh 0.1.2-alpha.4、dsh 0.1.3-alpha.1 与 dsh 0.1.5-rc.2 全量实测兼容）。
 
 ## 插件原理
 
@@ -28,9 +28,9 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 ## 工作方式
 
 - 事件接线全部使用真实 dsh 接口：`session/event`（按 `tool/result` / `assistant/message` / `tool/call` 分派）、服务注入 `static inject = ['sessions', 'commands']`、配置 schema 用 `@deepseek-ai/schemastery`、定时扫描由 `ctx.effect` 托管生命周期。
-- `/compact` **不重复注册**（dsh 0.1.2-alpha.3 起内置 `@deepseek-ai/dsh-command-compact`，已在 0.1.2-alpha.4 实测可注册）；本插件提供 `/local-compact` 与 `/restore`。
-  > ⚠️ 纯 `dsh-web-app` profile 默认在 host 平面**禁用** `command-compact`（`disabled: true`），打斜杠看不到 `/compact`。本插件的 bundle patch 会**显式重新启用** `compaction-basic`、`command-compact`、`tool-result-pruner`（在 web-app 之后应用），因此装了这个插件后 `/compact` 与 `/local-compact` 都能调出（已在 dsh 0.1.2-alpha.4 的 web profile 实测：`compact`、`local-compact`、`restore` 三个命令均在命令面注册）。
-- 插件对外暴露 `ctx.compactor`：`project()` / `compactSession()` / `localCompactSession()` / `restore()` / `prune()`。
+- `/compact` **不重复注册**（dsh 0.1.2-alpha.3 起内置 `@deepseek-ai/dsh-command-compact`，已在 0.1.2-alpha.4、0.1.3-alpha.1 与 0.1.5-rc.2 实测可注册）；本插件提供 `/local-compact`、`/su-compact` 与 `/restore`。
+  > ⚠️ 纯 `dsh-web-app` profile 默认在 host 平面**禁用** `command-compact`（`disabled: true`），打斜杠看不到 `/compact`。本插件的 bundle patch 会**显式重新启用** `compaction-basic`、`command-compact`、`tool-result-pruner`（在 web-app 之后应用），因此装了这个插件后 `/compact`、`/local-compact`、`/su-compact` 都能调出（已在 dsh 0.1.2-alpha.4、dsh 0.1.3-alpha.1 与 dsh 0.1.5-rc.2 的 web profile 实测：`compact`、`local-compact`、`restore`、`su-compact` 四个命令均在命令面注册）。
+- 插件对外暴露 `ctx.compactor`：`project()` / `compactSession()` / `localCompactSession()` / `suCompactSession()` / `restore()` / `prune()`。
 
 ### 命令
 
@@ -38,7 +38,8 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 |------|------|
 | `/local-compact` | 首次调用只输出风险说明与确认方式，**不压缩** |
 | `/local-compact confirm` | 用户确认后执行本地规则压缩并输出压缩报告（`confirm`/`yes`/`确认` 均可） |
-| `/restore` | 从归档恢复上一次压缩前的原文（API 与本地压缩均可回退） |
+| `/su-compact` | **语义理解压缩**：先做本地规则判断，再把「这段在做什么/为什么重要」的意图喂给 LLM，保留意图+成功策略+最终结论（需 `DEEPSEEK_API_KEY`，无 Key 时自动降级本地抽取） |
+| `/restore` | 只恢复 `/local-compact`、`/su-compact` 造成的压缩（不含 dsh 内置 `/compact`）；真实 dsh 上把被遮蔽的原文重新注入会话尾部 |
 
 ### 安装
 
@@ -121,7 +122,7 @@ API 摘要需要密钥：`export DEEPSEEK_API_KEY=sk-...`（不设置则 API 路
 ## 需要用户注意的事项
 
 - `/local-compact` 第一次执行只会要求确认、不会动数据；确认后如不满意，立即执行 `/restore` 可**完整**还原原文。
-- `/restore` 只能恢复**本插件**（API 压缩与 `/local-compact`）产生的压缩；dsh 内置 `/compact` 的回退由 dsh 自身语义决定。
+- `/restore` 只恢复本插件 `/local-compact`、`/su-compact` 造成的压缩；dsh 内置 `/compact` 的 checkpoint（`source.plugin="compact"`）不会被触及。
 - 归档写入目录默认为 `$DSH_DATA_DIR/archive/`（无该变量时为 `./.dsh-compactor-archive/`）；请确保目录可写，且不要手工编辑归档文件（append-only）。
 - `exemptTools` 中的工具（默认 `write`/`edit`/`task`）不会被剪枝、护栏和本地压缩触碰；如工作流依赖其结果，请勿移除。
 - 修改规则文件后无需重启会话：每次执行 `/local-compact` 都会重新读取。

@@ -1,15 +1,16 @@
 /**
- * dsh-compactor — Context Compaction plugin for DeepSeek Harness 0.1.2-alpha.3+.
+ * dsh-compactor — Context Compaction plugin for DeepSeek Harness.
  *
- * cordis4-native (ESM) Service plugin. Layers ():
- * 1. Realtime: prune tool results before they re-enter the model ,
- * wired to the real `session/event` (`tool/result`) surface.
- * 2. Batched: after each `assistant/message`, summarize compressible spans
- * once the session exceeds `thresholdTokens`.
- * 3. Archive: originals go to an append-only store so `/restore` works.
+ * cordis4-native (ESM) Service plugin with three layers:
+ *  1. Realtime: prune tool results before they re-enter the model, wired to
+ *     the real `session/event` (`tool/result`) surface.
+ *  2. Batched: after each `assistant/message`, summarize compressible spans
+ *     once the session exceeds `thresholdTokens`.
+ *  3. Archive: originals go to an append-only store so `/restore` works.
  *
- * Plus the anti dead-loop guard (). `/compact` is left to the built-in
- * `@deepseek-ai/dsh-command-compact`; this plugin adds `/restore`.
+ * Plus the anti dead-loop guard. `/compact` is left to the built-in
+ * `@deepseek-ai/dsh-command-compact`; this plugin adds `/local-compact`,
+ * `/su-compact` and `/restore`.
  *
  * @module dsh-compactor
  */
@@ -17,15 +18,16 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { Config, resolveConfig, type Config as ConfigType } from './config.js'
 import { estimateTokens } from './estimator.js'
-import { findCompressibleMessages } from './segmenter.js'
+import { findCompressibleMessages, type CompressibleBlock } from './segmenter.js'
 import { pruneToolResult } from './pruner.js'
 import { summarizeSegment, type SegmentSummarizer } from './summarizer.js'
+import { suSummarizer } from './su.js'
 import { loadLocalRules, localSummarizer, type LocalRules } from './local.js'
 import { detectPattern } from './patterns.js'
 import { ArchiveStore } from './store.js'
 import { CompressionMonitor, keywordCoverage, spanText } from './monitor.js'
 import { createGuard, type Guard } from './guard.js'
-import { surfaceToMessages, type SurfaceSessionLike } from './adapter.js'
+import { appendSurfaceReplacement, findPluginSummaryNodes, hasSurfaceReplace, reappendSurfaceEvent, surfaceToMessages, type SurfaceSessionLike } from './adapter.js'
 import { registerCommands } from './commands.js'
 import { describeScope, formatCompactionMessage, type BlockReport, type CompactionReport } from './report.js'
 import type { HarnessMessage } from './types.js'
@@ -39,22 +41,31 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export interface CompactionDeps {
- /** Override the summarizer (tests inject a fake; default = DeepSeek API or local fallback). */
+  /** Override the summarizer (tests inject a fake; default = DeepSeek API or local fallback). */
   summarize?: SegmentSummarizer
- /** Fresh guard factory (tests isolate history). */
+  /** Fresh guard factory (tests isolate history). */
   guard?: Guard
- /** Override local rules for /local-compact (default: resolved from config/env/package). */
+  /** Override local rules for /local-compact (default: resolved from config/env/package). */
   localRules?: LocalRules
+}
+
+/** One compressed block, emitted as the pass walks blocks from last to first. */
+export interface CompressedBlockInfo {
+  block: CompressibleBlock
+  segment: HarnessMessage[]
+  summaryMessage: HarnessMessage
 }
 
 /** Options for a compaction pass. */
 export interface CompressOptions {
- /** Skip a block entirely (e.g. exempt tools). */
+  /** Skip a block entirely (e.g. exempt tools). */
   skipBlock?: (segment: HarnessMessage[]) => boolean
- /** Extra metadata stamped on each summary message (e.g. `{ local: true }`). */
+  /** Extra metadata stamped on each summary message (e.g. `{ local: true }`). */
   extraMeta?: Record<string, unknown>
- /** Which engine produced the summaries (reported to the user). */
-  mode?: 'api' | 'local'
+  /** Which engine produced the summaries (reported to the user). */
+  mode?: 'api' | 'local' | 'su'
+  /** Called for each compressed block after its summary is built (order: last to first). */
+  onBlock?: (info: CompressedBlockInfo) => void
 }
 
 /** One compression pass over a session's projected messages. */
@@ -88,7 +99,7 @@ export async function compressMessages(
     const pattern = detectPattern(segment)
     const start = Date.now()
 
-    const summary = await summarize(segment, config)
+    const summary = await summarize(segment, config, block, messages)
     const entry = archive.append({
       sessionId,
       startIdx: block.startIdx,
@@ -104,6 +115,7 @@ export async function compressMessages(
       metadata: { compressed: true, archiveId: entry.id, originalLength: segment.length, reason: block.reason, ...(opts.extraMeta ?? {}) },
     }
     messages.splice(block.startIdx, segment.length, summaryMessage)
+    opts.onBlock?.({ block, segment, summaryMessage })
 
     const spanTokensBefore = estimateTokens(segment)
     const tokensAfterSpan = estimateTokens([summaryMessage])
@@ -199,10 +211,12 @@ export class Compactor extends Service {
   readonly archive: ArchiveStore
   readonly monitor = new CompressionMonitor()
   readonly guard: Guard
- /** Rules for the offline /local-compact path. */
+  /** Rules for the offline /local-compact path. */
   readonly localRules: LocalRules
- /** How many tool calls the guard hard-cancelled ( stats). */
+  /** How many tool calls the guard hard-cancelled. */
   cancelledCount = 0
+  /** Monotonic suffix keeping injected anti-loop message ids unique. */
+  private injectSeq = 0
   private readonly summarize: SegmentSummarizer
 
   constructor(ctx: Context, rawConfig: Partial<ConfigType> = {}, deps: CompactionDeps = {}) {
@@ -219,18 +233,18 @@ export class Compactor extends Service {
         const raw = event.data?.message as { content?: unknown; source?: { name?: string } } | undefined
         const toolName = raw?.source?.name ?? 'tool'
         if (this.config.exemptTools.includes(toolName)) return
- // Prune in place via a best-effort rewrite hook: the durable pruner
- // service (`ctx.toolResultPruner`) is the canonical path in dsh; here
- // we keep the same policy available for hosts without it.
+        // Prune in place via a best-effort rewrite hook: the durable pruner
+        // service (`ctx.toolResultPruner`) is the canonical path in dsh; here
+        // we keep the same policy available for hosts without it.
         this.ctx.emit('compactor/tool/prune', { toolName, result: raw })
       })
     }
 
- // Anti dead-loop guard (): observe the durable `tool/call` stream,
- // inject an anti-loop reminder (as injected context) at ≥3 identical
- // calls, and flag cancellation at ≥5. Cancellation enforcement belongs to
- // the host that dispatches the call (dsh's toolRuntime); this plugin
- // records the decision on the event payload for hosts that consult it.
+    // Anti dead-loop guard: observe the durable `tool/call` stream,
+    // inject an anti-loop reminder (as injected context) at ≥3 identical
+    // calls, and flag cancellation at ≥5. Cancellation enforcement belongs to
+    // the host that dispatches the call (dsh's toolRuntime); this plugin
+    // records the decision on the event payload for hosts that consult it.
     ctx.on('session/event', (session, event) => {
       if (event?.type !== 'tool/call') return
       const data = event.data as { name?: string; arguments?: string }
@@ -240,45 +254,35 @@ export class Compactor extends Service {
       try {
         args = JSON.parse(String(data?.arguments ?? '{}'))
       } catch {
- /* keep raw string as the identity */
+        /* keep raw string as the identity */
       }
       const decision = this.guard.shouldBlockToolCall(toolName, args)
-      const s = session as SurfaceSessionLike & {
-        append?: (type: string, data: { message: unknown }) => number
-      }
-      if (decision.reminder) {
-        s.append?.('user/message', {
-          message: { role: 'user', content: `【anti-loop】${decision.reminder}`, source: { kind: 'agent.inject' } },
-        })
-      }
+      if (decision.reminder) this.injectContext(session as unknown as SurfaceSessionLike, `【anti-loop】${decision.reminder}`)
       if (decision.blocked) {
         this.cancelledCount++
-        s.append?.('user/message', {
-          message: {
-            role: 'user',
-            content: `【anti-loop】已取消第 ${decision.count} 次重复调用 ${toolName}（参数与之前相同）`,
-            source: { kind: 'agent.inject' },
-          },
-        })
+        this.injectContext(
+          session as unknown as SurfaceSessionLike,
+          `【anti-loop】已取消第 ${decision.count} 次重复调用 ${toolName}（参数与之前相同）`,
+        )
       }
     })
 
- // Batched compaction after each completed assistant turn.
+    // Batched compaction after each completed assistant turn.
     ctx.on('session/event', (session, event) => {
       if (event?.type !== 'assistant/message') return
-      const messages = surfaceToMessages(session as SurfaceSessionLike)
+      const messages = surfaceToMessages(session as unknown as SurfaceSessionLike)
       if (estimateTokens(messages) > this.config.thresholdTokens) {
- // Asynchronous, non-blocking; announce the result through dsh logs.
-        void this.compactSession(session as SurfaceSessionLike).then((res) => {
+        // Asynchronous, non-blocking; announce the result through dsh logs.
+        void this.compactSession(session as unknown as SurfaceSessionLike).then((res) => {
           if (res.ok) this.ctx.logger.info(`[dsh-compactor] ${res.message}`)
         })
       }
     })
 
- // Periodic scan : cordis4 `ctx.effect` + a plain interval, cleared on disposal.
+    // Periodic scan: cordis4 `ctx.effect` + a plain interval, cleared on disposal.
     ctx.effect(() => {
       const timer = setInterval(() => {
-        const sessions = this.ctx.sessions.list() as SurfaceSessionLike[]
+        const sessions = this.ctx.sessions.list() as unknown as SurfaceSessionLike[]
         for (const session of sessions) {
           void this.scanSession(session)
         }
@@ -290,15 +294,84 @@ export class Compactor extends Service {
       archive: this.archive,
       restore: (session) => this.restore(session),
       localCompact: (session) => this.localCompactSession(session),
+      suCompact: (session) => this.suCompactSession(session),
     })
   }
 
- /** Project a dsh session to the plugin's message model. */
+  /**
+   * Inject one synthetic anti-loop context message. Real dsh requires the
+   * `user/message` payload to be the message itself plus a `surfaceOp`
+   * placement; the legacy mock accepts the same call and reads either shape.
+   */
+  private injectContext(session: SurfaceSessionLike, text: string): void {
+    const s = session as unknown as {
+      append?: (
+        type: string,
+        data: Record<string, unknown>,
+        opts?: { surfaceOp: "append" },
+      ) => unknown
+    }
+    // dsh rejects a re-entrant append while a session event is publishing, so
+    // defer past this append before adding the synthetic context message.
+    queueMicrotask(() => {
+      this.injectSeq += 1
+      try {
+        s.append?.(
+          "user/message",
+          {
+            id: `dsh-compactor-antiloop-${Date.now()}-${this.injectSeq}`,
+            role: "user",
+            content: [{ type: "text", text }],
+            source: { kind: "plugin", plugin: "dsh-compactor" },
+          },
+          { surfaceOp: "append" },
+        )
+      } catch (error) {
+        this.ctx.logger.warn(`[dsh-compactor] anti-loop inject failed: ${String(error)}`)
+      }
+    })
+  }
+
+  /**
+   * Apply a completed compaction pass to the session surface. Test/embedded
+   * hosts expose `applyProjection`; a real dsh Session instead receives one
+   * durable `surfaceOp: { op: "replace" }` user message per compressed block.
+   */
+  private applyCompaction(
+    session: SurfaceSessionLike,
+    nodeSeqs: readonly number[],
+    applied: readonly CompressedBlockInfo[],
+    projected: HarnessMessage[],
+  ): void {
+    const applyProjection = (session as { applyProjection?: (m: HarnessMessage[]) => void }).applyProjection
+    if (applyProjection) {
+      applyProjection(projected)
+      return
+    }
+    if (hasSurfaceReplace(session) === false) return
+    for (const { block, summaryMessage } of applied) {
+      const shadowedSeqs = nodeSeqs.slice(block.startIdx, block.endIdx + 1)
+      if (shadowedSeqs.length === 0) continue
+      this.injectSeq += 1
+      try {
+        appendSurfaceReplacement(
+          session,
+          shadowedSeqs,
+          summaryMessage.content ?? "",
+          `dsh-compactor-summary-${Date.now()}-${this.injectSeq}`,
+        )
+      } catch (error) {
+        this.ctx.logger.warn(`[dsh-compactor] surface replace failed: ${String(error)}`)
+      }
+    }
+  }
+
+  /** Project a dsh session to the plugin's message model. */
   project(session: SurfaceSessionLike): HarnessMessage[] {
     return surfaceToMessages(session)
   }
 
- /** Compact one session via the configured summarizer (API or injected). Returns the full report and applies the projection. */
+  /** Compact one session via the configured summarizer (API or injected). Returns the full report and applies the projection. */
   async compactSession(session: SurfaceSessionLike): Promise<CompactionReport> {
     const messages = surfaceToMessages(session)
     const res = await compressMessages(messages, this.config, this.summarize, this.archive, this.monitor, session.id, { mode: 'api' })
@@ -309,12 +382,14 @@ export class Compactor extends Service {
     return res
   }
 
- /**
- * `/local-compact` backend: offline rule/regex compression, NO API call.
- * Blocks whose tool results are exempt (`exemptTools`) are skipped.
- */
+  /**
+   * `/local-compact` backend: offline rule/regex compression, NO API call.
+   * Blocks whose tool results are exempt (`exemptTools`) are skipped.
+   */
   async localCompactSession(session: SurfaceSessionLike): Promise<CompactionReport> {
     const messages = surfaceToMessages(session)
+    const nodeSeqs = [...session.surface.nodes]
+    const applied: CompressedBlockInfo[] = []
     const res = await compressMessages(
       messages,
       this.config,
@@ -323,20 +398,49 @@ export class Compactor extends Service {
       this.monitor,
       session.id,
       {
-        mode: 'local',
+        mode: "local",
         skipBlock: (segment) =>
-          segment.some((m) => m.role === 'tool' && m.name && this.config.exemptTools.includes(m.name)),
+          segment.some((m) => m.role === "tool" && m.name && this.config.exemptTools.includes(m.name)),
         extraMeta: { local: true },
+        onBlock: (info) => applied.push(info),
       },
     )
-    if (res.ok) {
-      const apply = (session as { applyProjection?: (m: HarnessMessage[]) => void }).applyProjection
-      if (apply) apply(messages)
-    }
+    if (res.ok && applied.length) this.applyCompaction(session, nodeSeqs, applied, messages)
     return res
   }
 
- /** Timer-scan entry: compact only sessions far above threshold. */
+  /**
+   * `/su-compact` backend: local judgement + LLM semantic summary.
+   * Reuses the exact `/local-compact` judgement (`findCompressibleMessages` +
+   * `detectPattern` + exempt-tool skip) to locate spans, but summarises each
+   * span with the LLM using a guidance prompt that describes the span's
+   * intent (what it does / why it matters), not a raw rule list. Reporting and
+   * archive/restore reuse `compressMessages` / `formatCompactionMessage`.
+   */
+  async suCompactSession(session: SurfaceSessionLike): Promise<CompactionReport> {
+    const messages = surfaceToMessages(session)
+    const nodeSeqs = [...session.surface.nodes]
+    const applied: CompressedBlockInfo[] = []
+    const res = await compressMessages(
+      messages,
+      this.config,
+      suSummarizer(this.localRules),
+      this.archive,
+      this.monitor,
+      session.id,
+      {
+        mode: "su",
+        skipBlock: (segment) =>
+          segment.some((m) => m.role === "tool" && m.name && this.config.exemptTools.includes(m.name)),
+        extraMeta: { su: true },
+        onBlock: (info) => applied.push(info),
+      },
+    )
+    if (res.ok && applied.length) this.applyCompaction(session, nodeSeqs, applied, messages)
+    return res
+  }
+
+  /** Timer-scan entry: compact only sessions far above threshold. */
   async scanSession(session: SurfaceSessionLike): Promise<void> {
     const messages = surfaceToMessages(session)
     if (estimateTokens(messages) > this.config.thresholdTokens * 1.5) {
@@ -344,18 +448,43 @@ export class Compactor extends Service {
     }
   }
 
- /** Restore the previous uncompressed state of a session. */
+  /** Restore the previous uncompressed state of a session. */
   async restore(session: SurfaceSessionLike): Promise<{ ok: boolean; message: string }> {
-    const messages = surfaceToMessages(session)
-    const res = await restoreMessages(messages, this.archive, session.id)
-    if (res.ok) {
-      const apply = (session as { applyProjection?: (m: HarnessMessage[]) => void }).applyProjection
-      if (apply) apply(messages)
+    const applyProjection = (session as { applyProjection?: (m: HarnessMessage[]) => void }).applyProjection
+    if (applyProjection) {
+      const messages = surfaceToMessages(session)
+      const res = await restoreMessages(messages, this.archive, session.id)
+      if (res.ok) applyProjection(messages)
+      return res
     }
-    return res
+    if (hasSurfaceReplace(session) === false) {
+      return { ok: false, message: "当前宿主不支持 /restore" }
+    }
+    const summaries = findPluginSummaryNodes(session)
+    if (summaries.length === 0) {
+      return {
+        ok: false,
+        message: "没有可恢复的压缩摘要（/restore 只恢复 /local-compact、/su-compact 造成的压缩，不含 dsh 内置 /compact）",
+      }
+    }
+    let replugged = 0
+    for (const summary of summaries) {
+      for (const seq of summary.shadowedSeqs) {
+        if (reappendSurfaceEvent(session, seq)) replugged += 1
+      }
+      this.injectSeq += 1
+      appendSurfaceReplacement(
+        session,
+        [summary.seq],
+        "【已恢复】/local-compact 或 /su-compact 的压缩已撤销，原文已重新注入会话。",
+        `dsh-compactor-restore-${Date.now()}-${this.injectSeq}`,
+        "dsh-compactor-restore",
+      )
+    }
+    return { ok: true, message: `已恢复 ${summaries.length} 处压缩，重新注入 ${replugged} 条原始消息` }
   }
 
- /** Prune a single tool result (testable, policy-based). */
+  /** Prune a single tool result (testable, policy-based). */
   prune(toolName: string, result: unknown): unknown {
     if (this.config.exemptTools.includes(toolName)) return result
     return pruneToolResult(toolName, result)

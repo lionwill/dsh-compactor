@@ -1,10 +1,12 @@
 /**
- * `/restore` and `/local-compact` commands registered through the real dsh
- * `ctx.commands` service (cordis4).
+ * `/restore`, `/local-compact` and `/su-compact` commands registered through
+ * the real dsh `ctx.commands` service (cordis4).
  *
  * `/compact` stays the dsh built-in (`@deepseek-ai/dsh-command-compact`);
  * `/local-compact` is this plugin's OFFLINE rule/regex-only compaction — no
- * API calls, one explicit user confirmation, `/restore` for recovery.
+ * API calls, one explicit user confirmation, `/restore` for recovery;
+ * `/su-compact` reuses the `/local-compact` judgement but summarises each span
+ * with the LLM using a guidance prompt that describes the span's intent.
  *
  * @module dsh-compactor/commands
  */
@@ -17,10 +19,12 @@ import { surfaceToMessages } from './adapter.js'
 
 export interface CommandDeps {
   archive: ArchiveStore
- /** Restore the previous uncompressed state of a session. */
+  /** Restore the previous uncompressed state of a session. */
   restore: (session: SurfaceSessionLike) => Promise<{ ok: boolean; message: string }>
- /** Offline local-rules compaction of a session (no API calls). */
+  /** Offline local-rules compaction of a session (no API calls). */
   localCompact: (session: SurfaceSessionLike) => Promise<{ ok: boolean; message: string }>
+  /** Semantic-understanding compaction: local judgement + LLM guidance summary. */
+  suCompact: (session: SurfaceSessionLike) => Promise<{ ok: boolean; message: string }>
 }
 
 /** The confirmation prompt shown before /local-compact does anything. */
@@ -42,7 +46,7 @@ function sessionOf(invocation: CommandInvocation): SurfaceSessionLike {
 export function registerCommands(ctx: Context, deps: CommandDeps): void {
   ctx.commands.register({
     name: 'restore',
-    description: '恢复上一个未压缩状态（dsh-compactor，含 /compact 与 /local-compact 的压缩）',
+    description: '恢复 /local-compact、/su-compact 造成的压缩（不含 dsh 内置 /compact）',
     handler: async (invocation: CommandInvocation) => {
       const session = sessionOf(invocation)
       const res = await deps.restore(session)
@@ -60,12 +64,12 @@ export function registerCommands(ctx: Context, deps: CommandDeps): void {
       const arg = invocation.rawInput.trim().toLowerCase()
       const session = sessionOf(invocation)
 
- // Step 1: no (or unknown) confirmation token → show the warning, do NOT compress.
+      // Step 1: no (or unknown) confirmation token → show the warning, do NOT compress.
       if (arg !== 'confirm' && arg !== 'yes' && arg !== 'y' && arg !== '确认') {
         return { kind: 'success' as const, text: LOCAL_COMPACT_WARNING }
       }
 
- // Step 2: user confirmed → run offline local compaction.
+      // Step 2: user confirmed → run offline local compaction.
       const res = await deps.localCompact(session)
       if (!res.ok) return { kind: 'error' as const, text: res.message }
       return {
@@ -74,6 +78,21 @@ export function registerCommands(ctx: Context, deps: CommandDeps): void {
       }
     },
   })
+
+  ctx.commands.register({
+    name: 'su-compact',
+    description: '语义理解压缩：先做本地规则判断，再把“这段在做什么/为什么重要”的意图喂给 LLM 生成摘要',
+    handler: async (invocation: CommandInvocation) => {
+      const session = sessionOf(invocation)
+      const res = await deps.suCompact(session)
+      if (!res.ok) return { kind: 'error' as const, text: res.message }
+      return {
+        kind: 'success' as const,
+        text: `🧠 [语义理解压缩 · su-compact]\n${res.message}\n如对结果不满意，执行 /restore 可完整恢复原文。`,
+      }
+    },
+  })
+
 }
 
 export { surfaceToMessages }

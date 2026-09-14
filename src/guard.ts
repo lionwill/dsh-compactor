@@ -1,10 +1,10 @@
 /**
- * Anti dead-loop guard ().
+ * Anti dead-loop guard.
  *
  * Tracks repeated tool calls with near-identical arguments. At ≥3 identical
  * calls an anti-loop reminder is injected into the session context; at ≥5 the
  * call is hard-cancelled. This is the agent-level guard that pairs with
- * compaction to break tool-call loops ().
+ * compaction to break tool-call loops.
  *
  * @module dsh-compactor/guard
  */

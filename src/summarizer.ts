@@ -6,8 +6,8 @@
  * key decisions, important facts/numbers, final conclusions — dropping
  * duplicate calls, irrelevant detail and retry records.
  *
- * The transport is injectable so tests can run fully offline (the sandbox has
- * no API key). When no key is present and no transport is injected, a local
+ * The transport is injectable so tests can run fully offline without a real
+ * API key. When no key is present and no transport is injected, a local
  * extractive fallback keeps the plugin usable and deterministic.
  *
  * @module dsh-compactor/summarizer
@@ -20,8 +20,21 @@ import { detectPattern, patternLabel } from './patterns.js'
 /** A summary transport maps a request body to the model's text reply. */
 export type SummaryTransport = (body: unknown) => Promise<{ content: string }>
 
+/** A compressible span position (startIdx/endIdx, 0-based into the session messages). */
+export interface SummarizeBlock {
+  startIdx: number
+  endIdx: number
+  reason: 'tool_result' | 'long_response' | 'multiple_tools' | 'repetitive'
+  length: number
+}
+
 /** Summarizes a segment of messages into a single compact string. */
-export type SegmentSummarizer = (segment: HarnessMessage[], config: Config) => Promise<string>
+export type SegmentSummarizer = (
+  segment: HarnessMessage[],
+  config: Config,
+  block?: SummarizeBlock,
+  context?: HarnessMessage[],
+) => Promise<string>
 
 export const SUMMARY_ENDPOINT = 'https://api.deepseek.com/v1/chat/completions'
 
@@ -102,7 +115,7 @@ export async function summarizeSegment(
     if (!content || !content.trim()) return localSummarize(segment)
     return content.trim()
   } catch (err) {
- // Never let a summarizer failure break the session; fall back locally.
+    // Never let a summarizer failure break the session; fall back locally.
     console.error('[dsh-compactor] summary failed, using local fallback:', (err as Error).message)
     return localSummarize(segment)
   }
