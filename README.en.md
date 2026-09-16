@@ -44,28 +44,42 @@ An **anti dead-loop guard** observes the `tool/call` stream: when the same tool 
 ### Installation
 
 ```bash
-# Local development / fastest path (no git prepare, no allowBuilds needed — verified)
-dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
+# Option A (recommended, most reliable): local directory file: install (no git build scripts)
+git clone https://github.com/lionwill/dsh-compactor.git
+cd dsh-compactor
+npm install && npm run build          # lib/ is a build artifact (git-ignored); file: installs do not build
+dsh plugin add "dsh-compactor@file:$PWD"
 
-# From GitHub (pnpm runs the `prepare` hook, which compiles automatically)
+# Option B: install from GitHub (pnpm checks out and runs prepare to build; see allowBuilds below)
 dsh plugin add "github:lionwill/dsh-compactor"          # default main branch
-# To pin a version tag, tag the repo v0.4.1 first, then:
+# To pin a version tag, tag the repo first, then:
 dsh plugin add "github:lionwill/dsh-compactor#v0.4.1"
 ```
 
-> ⚠️ **Notes on GitHub installs**:
-> 1. This plugin is a **dsh bundle**: its `package.json` declares `dsh.bundle.patch`
->    (pointing to `cordis.patch.yml`). dsh 0.1.2-alpha.3+ activates a package as a
->    profile layer **only** when it declares `dsh.bundle`; without it the package is
->    installed as a plain dependency and is **not activated**. If `dsh plugin` prints
->    "declares no dsh.bundle", you installed an old build — upgrade to this version.
-> 2. pnpm ≥10 blocks `prepare` (compile) scripts on git dependencies by default, so a
->    GitHub install fails with `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`. Add
->    `allowBuilds: { dsh-compactor: true }` to the profile's `pnpm-workspace.yaml`
->    (the bare name matches any commit, so you won't need to re-edit it per update).
-> 3. The repo currently has **no `v0.4.1` tag**, so `#v0.4.1` fails with
->    `Could not resolve v0.4.1 to a commit`. Use the tagless `github:lionwill/dsh-compactor`,
->    or tag the repo `v0.4.1` first.
+**Troubleshooting**
+
+- **`link:github.com/lionwill/dsh-compactor` / `non-existent directory` / `declares no dsh.bundle`**
+  → the command is missing the `github:` prefix. `dsh plugin add github.com/lionwill/dsh-compactor` is
+  treated by pnpm as a **local relative path** (`link:github.com/...`); that directory does not exist, so
+  dsh cannot read `package.json` and reports "declares no dsh.bundle" (the repo **does** declare it).
+  Correct form: `dsh plugin add "github:lionwill/dsh-compactor"`.
+- **`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`**
+  → pnpm ≥10 blocks `prepare` (compile) scripts on git dependencies by default. The error prints an
+  **exact `allowBuilds` key**; add it verbatim to `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml`
+  and re-run:
+  ```yaml
+  allowBuilds:
+    "dsh-compactor@git+https://github.com/lionwill/dsh-compactor#<commit>": true
+  ```
+  The key is commit-bound (replace it with the newly printed key after repo updates). You can also set
+  `dangerouslyAllowAllBuilds: true` to allow every dependency build script (security trade-off).
+  **A bare package name (`dsh-compactor: true`) does NOT work for git deps (verified).** Option A
+  (`file:` local pre-built directory) avoids git build scripts entirely.
+- **`Could not resolve v0.4.1 to a commit`**
+  → the repo has no `v0.4.1` tag yet; use the tagless `github:lionwill/dsh-compactor`, or tag first.
+- **dsh bundle note**: this plugin `package.json` declares `dsh.bundle.patch` (pointing to
+  `cordis.patch.yml`). dsh 0.1.2-alpha.3+ activates a package as a profile layer only when it declares
+  `dsh.bundle`; if you see "declares no dsh.bundle", fix the two points above first.
 
 ## Configuration
 

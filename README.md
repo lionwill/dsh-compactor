@@ -44,25 +44,39 @@ DeepSeek Harness（`dsh`）的上下文压缩（Context Compaction）插件。 c
 ### 安装
 
 ```bash
-# 本地开发 / 立即可用（免 git prepare、免 allowBuilds，已实测）
-dsh plugin add "dsh-compactor@file:/path/to/dsh-compactor"
+# 方式 A（推荐，最稳）：本地目录 file: 安装（不涉及 git 构建脚本）
+git clone https://github.com/lionwill/dsh-compactor.git
+cd dsh-compactor
+npm install && npm run build          # lib/ 是构建产物（git 忽略），file: 安装不会自动构建
+dsh plugin add "dsh-compactor@file:$PWD"
 
-# 从 GitHub（pnpm 会执行 prepare 自动编译）
+# 方式 B：从 GitHub 安装（pnpm 会 checkout 后跑 prepare 构建，需 allowBuilds，见下）
 dsh plugin add "github:lionwill/dsh-compactor"          # 默认 main 分支
-# 若要用固定版本 tag，需先在仓库打上 v0.4.1 tag 后再用：
+# 若要用固定版本 tag，需先在仓库打上 tag 后再用：
 dsh plugin add "github:lionwill/dsh-compactor#v0.4.1"
 ```
 
-> ⚠️ **GitHub 安装注意**：
-> 1. 本插件是 **dsh bundle**：`package.json` 声明了 `dsh.bundle.patch`（指向 `cordis.patch.yml`）。
->    dsh 0.1.2-alpha.3+ 只激活声明了 `dsh.bundle` 的包为 profile 层；安装后它会自动加入
->    `dsh.profile.bundles` 并生效。若 `dsh plugin` 打印 "declares no dsh.bundle" 警告，
->    说明装的是旧版（缺少该字段），请升级到本版本。
-> 2. pnpm ≥10 默认阻止 git 依赖的 `prepare`（编译）脚本，GitHub 安装会报
->    `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`。在 profile 的 `pnpm-workspace.yaml` 里加
->    `allowBuilds: { dsh-compactor: true }` 即可（裸包名匹配任意 commit，一劳永逸）。
-> 3. 仓库当前**没有 `v0.4.1` tag**，直接写 `#v0.4.1` 会报 `Could not resolve v0.4.1 to a commit`；
->    要么用不带 tag 的 `github:lionwill/dsh-compactor`，要么先在仓库打 `v0.4.1` tag。
+**常见错误排查**
+
+- **`link:github.com/lionwill/dsh-compactor` / `non-existent directory` / `declares no dsh.bundle`**
+  → 命令漏了 `github:` 前缀。`dsh plugin add github.com/lionwill/dsh-compactor` 会被 pnpm 当成
+  **本地相对路径**（`link:github.com/...`）；该目录不存在，dsh 读不到 `package.json`，于是报
+  "declares no dsh.bundle"（**不是**仓库缺该字段）。正确写法：`dsh plugin add "github:lionwill/dsh-compactor"`。
+- **`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`**
+  → pnpm ≥10 默认拦截 git 依赖的 `prepare`（编译）脚本。错误信息会打印一个**精确的 `allowBuilds` key**，
+  把它原样加进 `$DSH_HOME/profiles/<profile>/pnpm-workspace.yaml` 后重跑：
+  ```yaml
+  allowBuilds:
+    "dsh-compactor@git+https://github.com/lionwill/dsh-compactor#<commit>": true
+  ```
+  key 与 commit 绑定（仓库更新后按最新错误信息替换）；也可写 `dangerouslyAllowAllBuilds: true`
+  一次性放开所有依赖构建脚本（有安全取舍）。**裸包名 `dsh-compactor: true` 对 git 依赖不生效（已实测）**。
+  最省事是用上面的方式 A（`file:` 本地已构建目录，不涉及 git 构建脚本）。
+- **`Could not resolve v0.4.1 to a commit`**
+  → 仓库还没打 `v0.4.1` tag；用不带 tag 的 `github:lionwill/dsh-compactor`，或先打 tag。
+- **dsh bundle 说明**：本插件 `package.json` 声明了 `dsh.bundle.patch`（指向 `cordis.patch.yml`）。
+  dsh 0.1.2-alpha.3+ 只把声明了 `dsh.bundle` 的依赖加入 `dsh.profile.bundles` 作为 profile 层激活。
+  `declares no dsh.bundle` 若是因上面两条引起，修好即可。
 
 ## 配置方式
 
